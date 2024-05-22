@@ -1,2 +1,2 @@
 # web_auto_xiaohongshu
-cxsj
+创新实践作业罢了
