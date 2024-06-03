@@ -10,10 +10,13 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 import subprocess
 import time
-import ai_chat
+import spark_chat
+import gpt_chat
 import re
 from time import sleep
 import os
+import tkinter as tk
+from tkinter import ttk, messagebox
 
 #设置文件夹
 file_path = r'D:\\programs\\web_auto_xiaohongshu'
@@ -59,10 +62,11 @@ def send_message(message):
         submit_button.click()
         sleep(1)
 
-# 获取评论内容并写入文件 的函数
+# 获取评论内容并写入文件
 def get_comment(n,driver):
     # 等待页面加载
     time.sleep(1)
+    #打印标题
     ele = driver.find_element(By.XPATH, "//div[@class='note-content']")
     print(ele.text)
     try:
@@ -85,7 +89,7 @@ def get_comment(n,driver):
     # 点击举报键(定位评论区)
     report_div.click()
     report_div.click()
-    #防止实际评论过少导致一直循环
+    #防止实际评论过少导致一直循环，若评论数一直为某一数字，则停止爬取
     repeat_flag = 0
     repeat_num = 0
     
@@ -93,7 +97,7 @@ def get_comment(n,driver):
         # 获取所有的评论元素
         comments = driver.find_elements(By.CLASS_NAME, 'parent-comment')
 
-        #print(f"当前评论数: {len(comments)}")
+        print(f"当前评论数: {len(comments)}")
 
         if len(comments) == repeat_num:
             repeat_flag += 1
@@ -109,18 +113,19 @@ def get_comment(n,driver):
             action.send_keys(Keys.SPACE).perform()
         if repeat_flag > 20:
             break
+    #返回页面顶部
+    action.send_keys(Keys.HOME).perform()
 
-
-    # 遍历并读取前n个评论内容
+    # 遍历并读取前n个评论以及回复内容
     for i in range(min(n, len(comments))):
         comment = comments[i]
-        
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment)
         # 获取评论作者
         #author = comment.find_element(By.CSS_SELECTOR, '.author .name').text
-        
         # 获取评论内容
-        content = comment.find_element(By.CSS_SELECTOR, '.content').text
+        content = comment.find_element(By.CSS_SELECTOR, '.content').text 
         comments_texts.append("评论"+str(i+1)+": "+content)
+        
         '''# 获取评论时间和位置
         date = comment.find_element(By.CSS_SELECTOR, '.date').text
         location = comment.find_element(By.CSS_SELECTOR, '.location').text
@@ -137,25 +142,61 @@ def get_comment(n,driver):
         #print(f'点赞数: {likes}')
         #print(f'回复数: {replies}')
         print('-----------------------')
+        #获取楼中楼
+        show_more_button_flag = 0
+        while show_more_button_flag < 5:
+            try:
+                # 在指定的父元素（评论元素）内查找“显示更多”按钮
+                show_more_button = WebDriverWait(comment, 1).until(
+                    EC.presence_of_element_located((By.XPATH, ".//div[@class='show-more']"))
+                )
+                # 定位“显示更多”按钮并滚动到可见
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", show_more_button)
+
+                # 点击“显示更多”按钮
+                show_more_button.click()
+                show_more_button_flag += 1
+
+            except:
+                print("无更多回复")
+                # 如果找不到“显示更多”按钮，跳出循环
+                break
+
+        if show_more_button_flag > 0:
+            # 获取回复元素
+            replys = comment.find_element(By.CLASS_NAME, 'reply-container')
+            reply = replys.find_elements(By.CLASS_NAME, 'content')
+            for i in range(len(reply)):
+                # 获取回复内容
+                reply_content = reply[i].text
+                print(f"回复{i+1}: {reply_content}")
+                comments_texts.append("回复"+str(i+1)+": "+reply_content)
+
+            #print(show_more_button_flag)
+        show_more_button_flag = 0
     # 写入评论内容到文件
     with open(file_path+'\\data\\comments.txt', 'w', encoding='utf-8') as file:
         file.write(ele.text + '\n')
         for comment in comments_texts[:n]:  
             file.write(comment + '\n')
 
+def chosse_model(file_path):
+    # 创建主窗口
+    root = tk.Tk()
+    root.title("AI 模型选择器")
+
+
+
 def ai_message():
      #打开评论区文档
         file_answer = file_path+'\\data\\answer.txt'   # 指定文件路径
 
-        answer = ai_chat.chat(file_path)
-        text = str(answer)
-        
-        pattern = re.compile(r"\[ChatGeneration\(text='(.*?)',", re.DOTALL)
-        matches = pattern.findall(text)
-        answers = str(matches)
-        print(answers)
+        answer = spark_chat.chat(file_path)
+        print(answer)
+        answer = gpt_chat.chat(file_path)
+        print(answer)
         with open(file_answer, 'w', encoding='utf-8') as file:
-            file.write(answers + '\n')
+            file.write(answer + '\n')
 
 # 设置浏览器类型
 browser = 'chrome'
@@ -200,6 +241,9 @@ else:
 url = 'https://www.xiaohongshu.com/explore'#小红书官网首页
 driver.get(url)
 
+# 最大化浏览器窗口
+driver.maximize_window()
+
 #循环次数，可以根据需要设置，建议不要太大，防止被封IP
 n = 10
 while (1):
@@ -214,7 +258,7 @@ while (1):
     for title in titles:
         # 获取链接文本
         title_text = title.text
-        print(title_text)  # 打印标题
+        #print(title_text)  # 打印标题
         try:
             title.click()  # 点击链接
             handles = driver.window_handles #获取当前浏览器的所有窗口句柄
