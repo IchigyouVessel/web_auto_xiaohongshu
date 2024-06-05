@@ -12,6 +12,7 @@ import subprocess
 import time
 import spark_chat
 import gpt_chat
+import baidu_emotion
 import re
 from time import sleep
 import os
@@ -63,7 +64,7 @@ def send_message(message):
         sleep(1)
 
 # 获取评论内容并写入文件
-def get_comment(n,driver):
+def get_comment(n,reply_flag,driver):
     # 等待页面加载
     time.sleep(1)
     #打印标题
@@ -97,7 +98,7 @@ def get_comment(n,driver):
         # 获取所有的评论元素
         comments = driver.find_elements(By.CLASS_NAME, 'parent-comment')
 
-        print(f"当前评论数: {len(comments)}")
+        #print(f"当前评论数: {len(comments)}")
 
         if len(comments) == repeat_num:
             repeat_flag += 1
@@ -135,41 +136,44 @@ def get_comment(n,driver):
         replies = comment.find_element(By.CSS_SELECTOR, '.reply .count').text'''
         # 打印或处理评论内容
         print(f'评论 {i + 1}:')
-        #print(f'作者: {author}')
         print(f'内容: {content}')
-        #print(f'时间: {date}')
-        #print(f'位置: {location}')
-        #print(f'点赞数: {likes}')
-        #print(f'回复数: {replies}')
+        '''print(f'作者: {author}')
+        print(f'时间: {date}')
+        print(f'位置: {location}')
+        print(f'点赞数: {likes}')
+        print(f'回复数: {replies}')'''
+        emotion_analysis(content)
         print('-----------------------')
         #获取楼中楼
-        show_more_button_flag = 0
-        while show_more_button_flag < 5:
+        show_more_button_flag = reply_flag # 点击“显示更多”按钮次数
+        while show_more_button_flag > 0:
             try:
                 # 在指定的父元素（评论元素）内查找“显示更多”按钮
                 show_more_button = WebDriverWait(comment, 1).until(
                     EC.presence_of_element_located((By.XPATH, ".//div[@class='show-more']"))
                 )
-                # 定位“显示更多”按钮并滚动到可见
+                # 定位“显示更多”按钮并滚动到可见(将其定位到屏幕中心)
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", show_more_button)
 
                 # 点击“显示更多”按钮
                 show_more_button.click()
-                show_more_button_flag += 1
+                show_more_button_flag -= 1
 
             except:
                 print("无更多回复")
                 # 如果找不到“显示更多”按钮，跳出循环
                 break
 
-        if show_more_button_flag > 0:
+        if show_more_button_flag != reply_flag:
             # 获取回复元素
             replys = comment.find_element(By.CLASS_NAME, 'reply-container')
             reply = replys.find_elements(By.CLASS_NAME, 'content')
             for i in range(len(reply)):
                 # 获取回复内容
                 reply_content = reply[i].text
+                emotion_analysis(reply_content)
                 print(f"回复{i+1}: {reply_content}")
+                # 写入回复内容到文件
                 comments_texts.append("回复"+str(i+1)+": "+reply_content)
 
             #print(show_more_button_flag)
@@ -189,14 +193,21 @@ def chosse_model(file_path):
 
 def ai_message():
      #打开评论区文档
-        file_answer = file_path+'\\data\\answer.txt'   # 指定文件路径
+    file_answer = file_path+'\\data\\answer.txt'   # 指定文件路径
+    #讯飞星火大模型
+    answer = spark_chat.chat(file_path)
+    print(answer)
+    #chatgpt模型
+    #answer = gpt_chat.chat(file_path)
+    #print(answer)
+    with open(file_answer, 'w', encoding='utf-8') as file:
+        file.write(answer + '\n')
 
-        answer = spark_chat.chat(file_path)
-        print(answer)
-        answer = gpt_chat.chat(file_path)
-        print(answer)
-        with open(file_answer, 'w', encoding='utf-8') as file:
-            file.write(answer + '\n')
+def emotion_analysis(str):
+    result = baidu_emotion.analyse(str)
+    #print(result)
+
+
 
 # 设置浏览器类型
 browser = 'chrome'
@@ -244,11 +255,18 @@ driver.get(url)
 # 最大化浏览器窗口
 driver.maximize_window()
 
+'''verification = WebDriverWait(driver, 1).until(
+                    EC.presence_of_element_located((By.XPATH, ".//div[@class='red-captcha-container']"))
+                )
+if verification:
+    sleep(5)'''
+
 #循环次数，可以根据需要设置，建议不要太大，防止被封IP
 n = 10
 while (1):
     flag = 1
     comment_num = 50 #读取评论数目
+    reply_num = 5 #读取回复数目
     #获取标题 
     titles = driver.find_elements(By.CSS_SELECTOR, "a.title")
     if not titles:
@@ -263,7 +281,7 @@ while (1):
             title.click()  # 点击链接
             handles = driver.window_handles #获取当前浏览器的所有窗口句柄
             driver.switch_to.window(handles[-1])    #切换到最新打开的窗口
-            get_comment(comment_num,driver)
+            get_comment(comment_num,reply_num,driver)
             ai_message()
             #send_message("啊")
             
